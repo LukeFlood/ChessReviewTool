@@ -1,0 +1,9 @@
+[Event "Lichess Rapid"]
+[Site "https://lichess.org/abcd1234"]
+[Date "2024.03.20"]
+[White "WhitePlayer"]
+[Black "BlackPlayer"]
+[Result "1-0"]
+[ECO "B12"]
+
+1. e4 c6 2. d4 d5 3. exd5 cxd5 4. Bd3 Nc6 5. c3 Nf6 6. Bf4 Bg4 7. Qb3 Qd7 8. Nd2 e6 9. Ngf3 Bxf3 10. Nxf3 Bd6 11. Bxd6 Qxd6 12. Qxb7 O-O 13. Qb3 e5 14. dxe5 Nxe5 15. Nxe5 Qxe5+ 16. Be2 Rfe8 17. Qc2 d4 18. cxd4 Qxd4 19. O-O Rac8 20. Qd1 Qxb2 21. Bf3 Red8 22. Qa4 Qb6 23. Rab1 Qd4 24. Qa6 Rc7 25. h3 g6 26. Rfd1 Qb6 27. Qxb6 axb6 28. Rxd8+ Kg7 29. Rb8 Rc2 30. Rxb6 Rxa2 31. Rb7 h5 32. g3 Ra5 33. Rc7 Ra3 34. Kg2 h4 35. g4 Ra4 36. g5 Nh5 37. Bd5 Nf4+ 38. Kh2 Nxd5 39. Rxd5 Rf4 40. Kg2 Rf5 41. Rxf5 gxf5 42. Rc4 Kg6 43. Rxh4 Kxg5 44. Ra4 f4 45. Kf3 f5 46. Rxf4 1-0
