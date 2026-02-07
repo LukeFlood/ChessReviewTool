@@ -67,8 +67,7 @@ export function useStockfishAnalysis(moves: Move[], settings: AnalysisSettings) 
   useEffect(() => {
     if (!workerRef.current) {
       workerRef.current = new Worker(
-        new URL("../workers/stockfishWorker.ts", import.meta.url),
-        { type: "module" }
+        new URL("../workers/stockfishWorker.ts", import.meta.url)
       );
     }
     const worker = workerRef.current;

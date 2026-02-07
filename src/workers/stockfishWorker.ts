@@ -1,5 +1,24 @@
-// The package root points to a missing file in stockfish@16.0.0, so import a concrete engine bundle.
-import Stockfish from "stockfish/src/stockfish-nnue-16-single.js";
+const STOCKFISH_CDN =
+  "https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/stockfish.js";
+
+const loadStockfish = () => {
+  const workerScope = self as DedicatedWorkerGlobalScope & {
+    Stockfish?: () => {
+      onmessage: ((event: MessageEvent | string) => void) | null;
+      postMessage: (message: string) => void;
+    };
+  };
+
+  if (!workerScope.Stockfish) {
+    workerScope.importScripts(STOCKFISH_CDN);
+  }
+
+  if (!workerScope.Stockfish) {
+    throw new Error("Stockfish engine failed to load.");
+  }
+
+  return workerScope.Stockfish;
+};
 
 type AnalyzeMessage = {
   type: "analyze";
@@ -20,7 +39,7 @@ type EngineScore = {
   mate?: number;
 };
 
-const engine = Stockfish();
+const engine = loadStockfish()();
 let latestId: string | null = null;
 let latestScore: EngineScore = {};
 
