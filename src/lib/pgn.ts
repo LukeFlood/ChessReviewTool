@@ -16,19 +16,20 @@ export type ParsedPgn = {
 
 export function parsePgn(pgn: string): ParsedPgn {
   const chess = new Chess();
-  const ok = chess.loadPgn(pgn, { strict: true });
-  if (!ok) {
+  try {
+    chess.loadPgn(pgn, { strict: true });
+  } catch {
     throw new Error("Invalid PGN. Please paste a complete Lichess PGN.");
   }
   const headers = chess.header();
   const moves = chess.history({ verbose: true });
   return {
     headers: {
-      Event: headers.Event,
-      White: headers.White,
-      Black: headers.Black,
-      Result: headers.Result,
-      ECO: headers.ECO
+      Event: headers.Event ?? undefined,
+      White: headers.White ?? undefined,
+      Black: headers.Black ?? undefined,
+      Result: headers.Result ?? undefined,
+      ECO: headers.ECO ?? undefined
     },
     moves,
     initialFen: new Chess().fen()

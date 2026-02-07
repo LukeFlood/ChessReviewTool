@@ -96,12 +96,12 @@ export default function HomePage() {
     if (completeAnalysis.length === 0) {
       return { biggestSwing: undefined, firstMistakeWhite: undefined, firstMistakeBlack: undefined, missedTactics: [] as string[] };
     }
-    let biggestSwing: MoveAnalysis | null = null;
-    let firstMistakeWhite: MoveAnalysis | null = null;
-    let firstMistakeBlack: MoveAnalysis | null = null;
+    let biggestSwing: MoveAnalysis | undefined;
+    let firstMistakeWhite: MoveAnalysis | undefined;
+    let firstMistakeBlack: MoveAnalysis | undefined;
     const missedTactics: string[] = [];
 
-    completeAnalysis.forEach((move, index) => {
+    for (const [index, move] of completeAnalysis.entries()) {
       const swing = Math.abs((move.evalAfter ?? 0) - (move.evalBefore ?? 0));
       if (!biggestSwing || swing > Math.abs((biggestSwing.evalAfter ?? 0) - (biggestSwing.evalBefore ?? 0))) {
         biggestSwing = move;
@@ -117,7 +117,7 @@ export default function HomePage() {
           firstMistakeBlack = move;
         }
       }
-    });
+    }
 
     return {
       biggestSwing: biggestSwing

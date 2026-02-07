@@ -1,4 +1,5 @@
-import Stockfish from "stockfish";
+// The package root points to a missing file in stockfish@16.0.0, so import a concrete engine bundle.
+import Stockfish from "stockfish/src/stockfish-nnue-16-single.js";
 
 type AnalyzeMessage = {
   type: "analyze";

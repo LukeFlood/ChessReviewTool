@@ -27,19 +27,19 @@ export function BoardControls({
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <button className="btn" onClick={onFirst}>
-          |◀
+          |&lt;
         </button>
         <button className="btn" onClick={onPrev}>
-          ◀
+          &lt;
         </button>
         <button className={clsx("btn", isPlaying && "bg-emerald-500/80")} onClick={onTogglePlay}>
           {isPlaying ? "Pause" : "Play"}
         </button>
         <button className="btn" onClick={onNext}>
-          ▶
+          &gt;
         </button>
         <button className="btn" onClick={onLast}>
-          ▶|
+          &gt;|
         </button>
       </div>
       <div className="space-y-1">

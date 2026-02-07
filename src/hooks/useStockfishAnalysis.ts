@@ -139,6 +139,13 @@ export function useStockfishAnalysis(moves: Move[], settings: AnalysisSettings) 
   }, [fens, moves, settings.depth, settings.movetime]);
 
   useEffect(() => {
+    return () => {
+      workerRef.current?.terminate();
+      workerRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
     const worker = workerRef.current;
     if (!worker) return;
 
@@ -171,7 +178,7 @@ export function useStockfishAnalysis(moves: Move[], settings: AnalysisSettings) 
       depth: settings.depth,
       movetime: settings.movetime
     });
-  }, [fens, moves, settings]);
+  }, [fens, moves, settings.depth, settings.movetime]);
 
   return { analysis, inProgress };
 }

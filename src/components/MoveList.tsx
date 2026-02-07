@@ -38,7 +38,7 @@ export function MoveList({
             <tr>
               <th className="px-3 py-2">#</th>
               <th className="px-3 py-2">SAN</th>
-              <th className="px-3 py-2">Eval Δ</th>
+              <th className="px-3 py-2">Eval Delta</th>
               <th className="px-3 py-2">CPL</th>
               <th className="px-3 py-2">Class</th>
               <th className="px-3 py-2">Comment</th>
@@ -48,7 +48,7 @@ export function MoveList({
             {moves.map((move, index) => {
               const detail = analysis[index];
               const rowEval = detail
-                ? `${formatEval(detail.evalBefore ?? undefined, detail.mateBefore ?? undefined)} → ${formatEval(
+                ? `${formatEval(detail.evalBefore ?? undefined, detail.mateBefore ?? undefined)} -> ${formatEval(
                     detail.evalAfter ?? undefined,
                     detail.mateAfter ?? undefined
                   )}`
