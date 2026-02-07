@@ -45,8 +45,10 @@ export default function HomePage() {
   const [comments, setComments] = useState<Record<number, string>>({});
   const [summary, setSummary] = useState(emptySummary);
   const [recentGames, setRecentGames] = useState<RecentGame[]>([]);
+  const [commentaryInProgress, setCommentaryInProgress] = useState(false);
+  const [commentaryError, setCommentaryError] = useState<string | null>(null);
 
-  const { analysis, inProgress } = useStockfishAnalysis(moves, { depth, movetime });
+  const { analysis, inProgress, error: engineError } = useStockfishAnalysis(moves, { depth, movetime });
   const analysisComplete = analysis.filter(Boolean).length === moves.length && moves.length > 0;
 
   useEffect(() => {
@@ -88,6 +90,8 @@ export default function HomePage() {
     if (!analysisComplete) {
       setComments({});
       setSummary(emptySummary);
+      setCommentaryError(null);
+      setCommentaryInProgress(false);
     }
   }, [analysisComplete]);
 
@@ -136,7 +140,7 @@ export default function HomePage() {
   }, [analysis, moves]);
 
   useEffect(() => {
-    if (!analysisComplete) return;
+    if (!analysisComplete || engineError) return;
 
     const payload = {
       metadata: headers,
@@ -145,6 +149,8 @@ export default function HomePage() {
     };
 
     const requestComments = async () => {
+      setCommentaryInProgress(true);
+      setCommentaryError(null);
       const response = await fetch("/api/commentary", {
         method: "POST",
         headers: {
@@ -152,7 +158,13 @@ export default function HomePage() {
         },
         body: JSON.stringify(payload)
       });
-      if (!response.ok) return;
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}));
+        setCommentaryError(
+          errorBody?.error || "Commentary request failed."
+        );
+        return;
+      }
       const data = (await response.json()) as CommentaryResponse;
       const commentMap: Record<number, string> = {};
       data.moveComments.forEach((comment) => {
@@ -160,13 +172,19 @@ export default function HomePage() {
       });
       setComments(commentMap);
       setSummary(data.summary);
+      setCommentaryInProgress(false);
     };
 
-    requestComments().catch(() => null);
-  }, [analysis, analysisComplete, headers, keyMoments, moves.length]);
+    requestComments().catch(() => {
+      setCommentaryError("Commentary request failed.");
+    }).finally(() => {
+      setCommentaryInProgress(false);
+    });
+  }, [analysis, analysisComplete, engineError, headers, keyMoments, moves.length]);
 
   const handleAnalyze = () => {
     setParsedError(null);
+    setCommentaryError(null);
     try {
       const parsed = parsePgn(pgnInput.trim());
       setMoves(parsed.moves);
@@ -295,8 +313,21 @@ export default function HomePage() {
             onTogglePlay={() => setIsPlaying((prev) => !prev)}
           />
           <div className="text-xs text-slate-400">
-            {inProgress ? "Analyzing moves..." : moves.length > 0 ? "Analysis complete." : "Awaiting PGN."}
+            {engineError
+              ? `Engine error: ${engineError}`
+              : inProgress
+              ? "Analyzing moves..."
+              : commentaryInProgress
+              ? "Generating LLM commentary..."
+              : moves.length > 0
+              ? "Analysis complete."
+              : "Awaiting PGN."}
           </div>
+          {commentaryError && (
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-200">
+              {commentaryError}
+            </div>
+          )}
         </div>
 
         <MoveList

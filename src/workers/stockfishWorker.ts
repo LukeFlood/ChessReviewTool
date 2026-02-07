@@ -1,13 +1,18 @@
 const STOCKFISH_CDN =
-  "https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/stockfish.js";
+  "https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/stockfish-nnue-16-single.js";
+
+type WorkerScopeWithStockfish = typeof globalThis & {
+  importScripts: (...urls: string[]) => void;
+  Stockfish?: (options?: {
+    locateFile?: (path: string) => string;
+  }) => {
+    onmessage: ((event: MessageEvent | string) => void) | null;
+    postMessage: (message: string) => void;
+  };
+};
 
 const loadStockfish = () => {
-  const workerScope = self as DedicatedWorkerGlobalScope & {
-    Stockfish?: () => {
-      onmessage: ((event: MessageEvent | string) => void) | null;
-      postMessage: (message: string) => void;
-    };
-  };
+  const workerScope = self as unknown as WorkerScopeWithStockfish;
 
   if (!workerScope.Stockfish) {
     workerScope.importScripts(STOCKFISH_CDN);
@@ -37,11 +42,36 @@ type WorkerMessage = AnalyzeMessage | StopMessage;
 type EngineScore = {
   cp?: number;
   mate?: number;
+  pv?: string[];
+  bestmove?: string;
 };
 
-const engine = loadStockfish()();
 let latestId: string | null = null;
 let latestScore: EngineScore = {};
+let engine:
+  | {
+      onmessage: ((event: MessageEvent | string) => void) | null;
+      postMessage: (message: string) => void;
+    }
+  | null = null;
+
+const ensureEngine = () => {
+  if (engine) return engine;
+  const stockfish = loadStockfish();
+  const baseUrl = STOCKFISH_CDN.slice(0, STOCKFISH_CDN.lastIndexOf("/") + 1);
+  engine = stockfish({
+    locateFile: (path) =>
+      path.endsWith(".wasm") ? `${baseUrl}${path}` : path
+  });
+  return engine;
+};
+
+const sendError = (message: string) => {
+  self.postMessage({
+    type: "error",
+    message
+  });
+};
 
 const sendResult = (id: string, score: EngineScore) => {
   self.postMessage({
@@ -51,22 +81,34 @@ const sendResult = (id: string, score: EngineScore) => {
   });
 };
 
-engine.onmessage = (event: MessageEvent | string) => {
+const handleEngineMessage = (event: MessageEvent | string) => {
   const line = typeof event === "string" ? event : event.data;
   if (typeof line !== "string") return;
 
   if (line.startsWith("info")) {
     const matchCp = line.match(/score cp (-?\d+)/);
     const matchMate = line.match(/score mate (-?\d+)/);
+    const matchPv = line.match(/\spv\s(.+)$/);
+
     if (matchCp) {
-      latestScore = { cp: Number(matchCp[1]) };
+      latestScore = { ...latestScore, cp: Number(matchCp[1]), mate: undefined };
     }
     if (matchMate) {
-      latestScore = { mate: Number(matchMate[1]) };
+      latestScore = { ...latestScore, mate: Number(matchMate[1]), cp: undefined };
+    }
+    if (matchPv) {
+      latestScore = {
+        ...latestScore,
+        pv: matchPv[1].trim().split(/\s+/).slice(0, 8)
+      };
     }
   }
 
   if (line.startsWith("bestmove") && latestId) {
+    const bestmove = line.split(/\s+/)[1];
+    if (bestmove && bestmove !== "(none)") {
+      latestScore = { ...latestScore, bestmove };
+    }
     sendResult(latestId, latestScore);
     latestId = null;
   }
@@ -74,20 +116,28 @@ engine.onmessage = (event: MessageEvent | string) => {
 
 self.onmessage = (event: MessageEvent<WorkerMessage>) => {
   const message = event.data;
-  if (message.type === "stop") {
-    engine.postMessage("stop");
-    latestId = null;
-    return;
-  }
+  try {
+    const sf = ensureEngine();
+    sf.onmessage = handleEngineMessage;
 
-  latestId = message.id;
-  latestScore = {};
-  engine.postMessage("uci");
-  engine.postMessage("isready");
-  engine.postMessage(`position fen ${message.fen}`);
-  if (message.movetime && message.movetime > 0) {
-    engine.postMessage(`go movetime ${message.movetime}`);
-  } else {
-    engine.postMessage(`go depth ${message.depth ?? 12}`);
+    if (message.type === "stop") {
+      sf.postMessage("stop");
+      latestId = null;
+      return;
+    }
+
+    latestId = message.id;
+    latestScore = {};
+    sf.postMessage("uci");
+    sf.postMessage("isready");
+    sf.postMessage(`position fen ${message.fen}`);
+    if (message.movetime && message.movetime > 0) {
+      sf.postMessage(`go movetime ${message.movetime}`);
+    } else {
+      sf.postMessage(`go depth ${message.depth ?? 12}`);
+    }
+  } catch (error) {
+    latestId = null;
+    sendError(error instanceof Error ? error.message : "Stockfish worker failed.");
   }
 };

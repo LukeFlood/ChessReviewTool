@@ -3,10 +3,16 @@ import { z } from "zod";
 export const moveAnalysisSchema = z.object({
   moveIndex: z.number().int().min(0),
   san: z.string(),
+  color: z.enum(["w", "b"]),
   evalBefore: z.number().nullable(),
   evalAfter: z.number().nullable(),
   mateBefore: z.number().nullable(),
   mateAfter: z.number().nullable(),
+  fenBefore: z.string(),
+  fenAfter: z.string(),
+  bestMoveBefore: z.string().nullable(),
+  pvBefore: z.array(z.string()),
+  pvAfter: z.array(z.string()),
   cpl: z.number().nonnegative(),
   classification: z.enum([
     "best",

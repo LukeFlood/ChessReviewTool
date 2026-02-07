@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Move } from "chess.js";
+import type { Move, PieceSymbol } from "chess.js";
 import { Chess } from "chess.js";
 import { classifyCpl } from "@/lib/classification";
 import type { MoveAnalysis } from "@/lib/schemas";
@@ -14,6 +14,8 @@ export type AnalysisSettings = {
 type EngineScore = {
   cp?: number;
   mate?: number;
+  pv?: string[];
+  bestmove?: string;
 };
 
 const emptyScore: EngineScore = {};
@@ -47,9 +49,25 @@ const isMateBlunder = (moveColor: "w" | "b", score: EngineScore) => {
   return moveColor === "w" ? score.mate < 0 : score.mate > 0;
 };
 
+const uciToSan = (fen: string, uci?: string) => {
+  if (!uci || uci.length < 4) return null;
+  const chess = new Chess(fen);
+  const from = uci.slice(0, 2);
+  const to = uci.slice(2, 4);
+  const promotion = uci.length > 4 ? (uci.slice(4, 5) as PieceSymbol) : undefined;
+
+  try {
+    const move = chess.move({ from, to, promotion });
+    return move?.san ?? null;
+  } catch {
+    return null;
+  }
+};
+
 export function useStockfishAnalysis(moves: Move[], settings: AnalysisSettings) {
   const [analysis, setAnalysis] = useState<MoveAnalysis[]>([]);
   const [inProgress, setInProgress] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const queueRef = useRef<string[]>([]);
   const scoresRef = useRef<Record<string, EngineScore>>({});
@@ -73,12 +91,17 @@ export function useStockfishAnalysis(moves: Move[], settings: AnalysisSettings) 
     const worker = workerRef.current;
 
     const handleMessage = (event: MessageEvent) => {
-      const { type, id, score } = event.data as {
-        type: "analysis";
-        id: string;
-        score: EngineScore;
-      };
-      if (type !== "analysis") return;
+      const payload = event.data as
+        | { type: "analysis"; id: string; score: EngineScore }
+        | { type: "error"; message: string };
+
+      if (payload.type === "error") {
+        setInProgress(false);
+        setError(payload.message || "Engine analysis failed.");
+        return;
+      }
+
+      const { id, score } = payload;
       scoresRef.current[id] = score;
 
       const nextId = queueRef.current.shift();
@@ -114,16 +137,24 @@ export function useStockfishAnalysis(moves: Move[], settings: AnalysisSettings) 
       const classification = classifyCpl(cpl, isMateBlunder(move.color, afterScore));
       const evalBefore = scoreToEval(beforeScore);
       const evalAfter = scoreToEval(afterScore);
+      const fenBefore = fens[moveIndex] ?? "";
+      const fenAfter = fens[moveIndex + 1] ?? fenBefore;
 
       setAnalysis((prev) => {
         const next = [...prev];
         next[moveIndex] = {
           moveIndex,
           san: move.san,
+          color: move.color,
           evalBefore: evalBefore.cp,
           evalAfter: evalAfter.cp,
           mateBefore: evalBefore.mate,
           mateAfter: evalAfter.mate,
+          fenBefore,
+          fenAfter,
+          bestMoveBefore: uciToSan(fenBefore, beforeScore.bestmove),
+          pvBefore: beforeScore.pv ?? [],
+          pvAfter: afterScore.pv ?? [],
           cpl,
           classification
         };
@@ -151,6 +182,7 @@ export function useStockfishAnalysis(moves: Move[], settings: AnalysisSettings) 
     worker.postMessage({ type: "stop" });
     setAnalysis([]);
     setInProgress(false);
+    setError(null);
     queueRef.current = [];
     scoresRef.current = {};
 
@@ -179,5 +211,5 @@ export function useStockfishAnalysis(moves: Move[], settings: AnalysisSettings) 
     });
   }, [fens, moves, settings.depth, settings.movetime]);
 
-  return { analysis, inProgress };
+  return { analysis, inProgress, error };
 }

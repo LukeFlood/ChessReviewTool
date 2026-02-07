@@ -28,10 +28,13 @@ npm run dev
 Open `http://localhost:3000` and paste a PGN (a sample is available in `public/fixtures/sample-rapid.pgn`).
 
 ## Configuration
-Create a `.env.local` file if you plan to connect the commentary API to a hosted LLM later:
+Create a `.env.local` file to enable real LLM commentary:
 ```
 OPENAI_API_KEY=your-key
+OPENAI_MODEL=gpt-4.1-mini
 ```
+
+If `OPENAI_API_KEY` is missing or the API call fails, the app falls back to local rule-based commentary.
 
 ## Tests
 ```bash
