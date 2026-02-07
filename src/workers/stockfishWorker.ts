@@ -1,36 +1,6 @@
-const STOCKFISH_LOCAL_SCRIPT = "/stockfish/stockfish-nnue-16-single.js";
-const STOCKFISH_LOCAL_BASE = "/stockfish/";
-const STOCKFISH_CDN_SCRIPT =
-  "https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/stockfish-nnue-16-single.js";
-const STOCKFISH_CDN_BASE = "https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/";
+import Stockfish from "stockfish/src/stockfish-nnue-16-single.js";
 
-type WorkerScopeWithStockfish = typeof globalThis & {
-  importScripts: (...urls: string[]) => void;
-  Stockfish?: (options?: {
-    locateFile?: (path: string) => string;
-  }) => {
-    onmessage: ((event: MessageEvent | string) => void) | null;
-    postMessage: (message: string) => void;
-  };
-};
-
-const loadStockfish = () => {
-  const workerScope = self as unknown as WorkerScopeWithStockfish;
-
-  if (!workerScope.Stockfish) {
-    try {
-      workerScope.importScripts(STOCKFISH_LOCAL_SCRIPT);
-    } catch {
-      workerScope.importScripts(STOCKFISH_CDN_SCRIPT);
-    }
-  }
-
-  if (!workerScope.Stockfish) {
-    throw new Error("Stockfish engine failed to load.");
-  }
-
-  return workerScope.Stockfish;
-};
+const STOCKFISH_WASM_PATH = "/stockfish/stockfish-nnue-16-single.wasm";
 
 type AnalyzeMessage = {
   type: "analyze";
@@ -62,28 +32,6 @@ let engine:
     }
   | null = null;
 
-const ensureEngine = () => {
-  if (engine) return engine;
-  const stockfish = loadStockfish();
-  let baseUrl = STOCKFISH_LOCAL_BASE;
-  try {
-    const checkRequest = new XMLHttpRequest();
-    checkRequest.open("HEAD", `${STOCKFISH_LOCAL_BASE}stockfish-nnue-16-single.wasm`, false);
-    checkRequest.send(null);
-    if (checkRequest.status < 200 || checkRequest.status >= 400) {
-      baseUrl = STOCKFISH_CDN_BASE;
-    }
-  } catch {
-    baseUrl = STOCKFISH_CDN_BASE;
-  }
-
-  engine = stockfish({
-    locateFile: (path) =>
-      path.endsWith(".wasm") ? `${baseUrl}${path}` : path
-  });
-  return engine;
-};
-
 const sendError = (message: string) => {
   self.postMessage({
     type: "error",
@@ -97,6 +45,15 @@ const sendResult = (id: string, score: EngineScore) => {
     id,
     score
   });
+};
+
+const ensureEngine = () => {
+  if (engine) return engine;
+  engine = Stockfish({
+    locateFile: (path: string) =>
+      path.endsWith(".wasm") ? STOCKFISH_WASM_PATH : path
+  });
+  return engine;
 };
 
 const handleEngineMessage = (event: MessageEvent | string) => {
@@ -134,6 +91,7 @@ const handleEngineMessage = (event: MessageEvent | string) => {
 
 self.onmessage = (event: MessageEvent<WorkerMessage>) => {
   const message = event.data;
+
   try {
     const sf = ensureEngine();
     sf.onmessage = handleEngineMessage;
@@ -156,6 +114,10 @@ self.onmessage = (event: MessageEvent<WorkerMessage>) => {
     }
   } catch (error) {
     latestId = null;
-    sendError(error instanceof Error ? error.message : "Stockfish worker failed.");
+    sendError(
+      error instanceof Error
+        ? `Stockfish engine failed to load: ${error.message}`
+        : "Stockfish worker failed."
+    );
   }
 };

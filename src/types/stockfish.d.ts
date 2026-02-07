@@ -4,6 +4,8 @@ declare module "stockfish/src/stockfish-nnue-16-single.js" {
     onmessage: ((event: MessageEvent | string) => void) | null;
   };
 
-  const Stockfish: () => EngineInstance;
+  const Stockfish: (options?: {
+    locateFile?: (path: string) => string;
+  }) => EngineInstance;
   export default Stockfish;
 }
