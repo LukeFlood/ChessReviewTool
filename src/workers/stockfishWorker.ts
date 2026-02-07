@@ -23,14 +23,17 @@ type EngineScore = {
   bestmove?: string;
 };
 
+type EngineInstance = {
+  onmessage?: ((event: MessageEvent | string) => void) | null;
+  postMessage?: (message: string) => void;
+  postCustomMessage?: (message: string) => void;
+  addMessageListener?: (listener: (message: string) => void) => void;
+};
+
 let latestId: string | null = null;
 let latestScore: EngineScore = {};
-let engine:
-  | {
-      onmessage: ((event: MessageEvent | string) => void) | null;
-      postMessage: (message: string) => void;
-    }
-  | null = null;
+let engineReady: Promise<EngineInstance> | null = null;
+let listenerAttached = false;
 
 const sendError = (message: string) => {
   self.postMessage({
@@ -47,13 +50,32 @@ const sendResult = (id: string, score: EngineScore) => {
   });
 };
 
-const ensureEngine = () => {
-  if (engine) return engine;
-  engine = Stockfish({
-    locateFile: (path: string) =>
-      path.endsWith(".wasm") ? STOCKFISH_WASM_PATH : path
-  });
+const normalizeEngine = (maybeEngine: unknown): EngineInstance => {
+  if (!maybeEngine || typeof maybeEngine !== "object") {
+    throw new Error("Stockfish factory returned invalid engine object.");
+  }
+  const engine = maybeEngine as EngineInstance;
+  if (
+    typeof engine.postMessage !== "function" &&
+    typeof engine.postCustomMessage === "function"
+  ) {
+    engine.postMessage = engine.postCustomMessage;
+  }
+  if (typeof engine.postMessage !== "function") {
+    throw new Error("Stockfish engine does not expose postMessage.");
+  }
   return engine;
+};
+
+const ensureEngine = async () => {
+  if (!engineReady) {
+    const maybeEngine = Stockfish({
+      locateFile: (path: string) =>
+        path.endsWith(".wasm") ? STOCKFISH_WASM_PATH : path
+    });
+    engineReady = Promise.resolve(maybeEngine).then(normalizeEngine);
+  }
+  return engineReady;
 };
 
 const handleEngineMessage = (event: MessageEvent | string) => {
@@ -89,28 +111,48 @@ const handleEngineMessage = (event: MessageEvent | string) => {
   }
 };
 
-self.onmessage = (event: MessageEvent<WorkerMessage>) => {
-  const message = event.data;
-
-  try {
-    const sf = ensureEngine();
+const attachMessageListener = (sf: EngineInstance) => {
+  if (listenerAttached) return;
+  if (typeof sf.addMessageListener === "function") {
+    sf.addMessageListener((line) => handleEngineMessage(line));
+    listenerAttached = true;
+    return;
+  }
+  if ("onmessage" in sf) {
     sf.onmessage = handleEngineMessage;
+    listenerAttached = true;
+    return;
+  }
+  throw new Error("Stockfish engine has no message listener API.");
+};
+
+const postToEngine = (sf: EngineInstance, message: string) => {
+  if (typeof sf.postMessage !== "function") {
+    throw new Error("Stockfish engine postMessage is not available.");
+  }
+  sf.postMessage(message);
+};
+
+const handleWorkerMessage = async (message: WorkerMessage) => {
+  try {
+    const sf = await ensureEngine();
+    attachMessageListener(sf);
 
     if (message.type === "stop") {
-      sf.postMessage("stop");
+      postToEngine(sf, "stop");
       latestId = null;
       return;
     }
 
     latestId = message.id;
     latestScore = {};
-    sf.postMessage("uci");
-    sf.postMessage("isready");
-    sf.postMessage(`position fen ${message.fen}`);
+    postToEngine(sf, "uci");
+    postToEngine(sf, "isready");
+    postToEngine(sf, `position fen ${message.fen}`);
     if (message.movetime && message.movetime > 0) {
-      sf.postMessage(`go movetime ${message.movetime}`);
+      postToEngine(sf, `go movetime ${message.movetime}`);
     } else {
-      sf.postMessage(`go depth ${message.depth ?? 12}`);
+      postToEngine(sf, `go depth ${message.depth ?? 12}`);
     }
   } catch (error) {
     latestId = null;
@@ -120,4 +162,8 @@ self.onmessage = (event: MessageEvent<WorkerMessage>) => {
         : "Stockfish worker failed."
     );
   }
+};
+
+self.onmessage = (event: MessageEvent<WorkerMessage>) => {
+  void handleWorkerMessage(event.data);
 };
