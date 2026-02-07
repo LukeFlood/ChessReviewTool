@@ -1,6 +1,4 @@
-import Stockfish from "stockfish/src/stockfish-nnue-16-single.js";
-
-const STOCKFISH_WASM_PATH = "/stockfish/stockfish-nnue-16-single.wasm";
+const STOCKFISH_SCRIPT_PATH = "/stockfish/stockfish-nnue-16-single.js";
 const READY_TIMEOUT_MS = 15000;
 const ANALYZE_TIMEOUT_MS = 45000;
 
@@ -25,24 +23,15 @@ type EngineScore = {
   bestmove?: string;
 };
 
-type EngineInstance = {
-  onmessage?: ((event: MessageEvent | string) => void) | null;
-  postMessage?: (message: string) => void;
-  postCustomMessage?: (message: string) => void;
-  addMessageListener?: (listener: (message: string) => void) => void;
-};
-
 type LineWaiter = {
   test: (line: string) => boolean;
   resolve: () => void;
-  reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
 };
 
 let latestId: string | null = null;
 let latestScore: EngineScore = {};
-let engineReady: Promise<EngineInstance> | null = null;
-let listenerAttached = false;
+let engineReady: Promise<Worker> | null = null;
 let initialized = false;
 let analyzeTimer: ReturnType<typeof setTimeout> | null = null;
 const lineWaiters: LineWaiter[] = [];
@@ -69,41 +58,6 @@ const clearAnalyzeTimer = () => {
   }
 };
 
-const postToEngine = (sf: EngineInstance, message: string) => {
-  if (typeof sf.postMessage !== "function") {
-    throw new Error("Stockfish engine postMessage is not available.");
-  }
-  sf.postMessage(message);
-};
-
-const normalizeEngine = (maybeEngine: unknown): EngineInstance => {
-  if (!maybeEngine || typeof maybeEngine !== "object") {
-    throw new Error("Stockfish factory returned invalid engine object.");
-  }
-  const engine = maybeEngine as EngineInstance;
-  if (
-    typeof engine.postMessage !== "function" &&
-    typeof engine.postCustomMessage === "function"
-  ) {
-    engine.postMessage = engine.postCustomMessage;
-  }
-  if (typeof engine.postMessage !== "function") {
-    throw new Error("Stockfish engine does not expose postMessage.");
-  }
-  return engine;
-};
-
-const ensureEngine = async () => {
-  if (!engineReady) {
-    const maybeEngine = Stockfish({
-      locateFile: (path: string) =>
-        path.endsWith(".wasm") ? STOCKFISH_WASM_PATH : path
-    });
-    engineReady = Promise.resolve(maybeEngine).then(normalizeEngine);
-  }
-  return engineReady;
-};
-
 const resolveMatchingWaiters = (line: string) => {
   for (let i = lineWaiters.length - 1; i >= 0; i -= 1) {
     const waiter = lineWaiters[i];
@@ -115,10 +69,7 @@ const resolveMatchingWaiters = (line: string) => {
   }
 };
 
-const handleEngineLine = (event: MessageEvent | string) => {
-  const line = typeof event === "string" ? event : event.data;
-  if (typeof line !== "string") return;
-
+const handleEngineLine = (line: string) => {
   resolveMatchingWaiters(line);
 
   if (line.startsWith("info")) {
@@ -151,21 +102,6 @@ const handleEngineLine = (event: MessageEvent | string) => {
   }
 };
 
-const attachMessageListener = (sf: EngineInstance) => {
-  if (listenerAttached) return;
-  if (typeof sf.addMessageListener === "function") {
-    sf.addMessageListener((line) => handleEngineLine(line));
-    listenerAttached = true;
-    return;
-  }
-  if ("onmessage" in sf) {
-    sf.onmessage = handleEngineLine;
-    listenerAttached = true;
-    return;
-  }
-  throw new Error("Stockfish engine has no message listener API.");
-};
-
 const waitForLine = (
   test: (line: string) => boolean,
   timeoutMs: number,
@@ -184,18 +120,49 @@ const waitForLine = (
     lineWaiters.push({
       test,
       resolve,
-      reject,
       timer
     });
   });
 
-const initializeEngine = async (sf: EngineInstance) => {
+const postToEngine = (engine: Worker, message: string) => {
+  engine.postMessage(message);
+};
+
+const ensureEngine = async () => {
+  if (!engineReady) {
+    engineReady = new Promise<Worker>((resolve, reject) => {
+      try {
+        const engine = new Worker(STOCKFISH_SCRIPT_PATH);
+        engine.onmessage = (event: MessageEvent) => {
+          if (typeof event.data === "string") {
+            handleEngineLine(event.data);
+          }
+        };
+        engine.onerror = () => {
+          reject(new Error("Nested Stockfish worker failed to initialize."));
+        };
+        resolve(engine);
+      } catch (error) {
+        reject(
+          new Error(
+            error instanceof Error
+              ? error.message
+              : "Failed to create nested Stockfish worker."
+          )
+        );
+      }
+    });
+  }
+  return engineReady;
+};
+
+const initializeEngine = async (engine: Worker) => {
   if (initialized) return;
 
-  postToEngine(sf, "uci");
+  postToEngine(engine, "uci");
   await waitForLine((line) => line === "uciok", READY_TIMEOUT_MS, "uciok");
 
-  postToEngine(sf, "isready");
+  postToEngine(engine, "isready");
   await waitForLine((line) => line === "readyok", READY_TIMEOUT_MS, "readyok");
 
   initialized = true;
@@ -203,13 +170,12 @@ const initializeEngine = async (sf: EngineInstance) => {
 
 const handleWorkerMessage = async (message: WorkerMessage) => {
   try {
-    const sf = await ensureEngine();
-    attachMessageListener(sf);
-    await initializeEngine(sf);
+    const engine = await ensureEngine();
+    await initializeEngine(engine);
 
     if (message.type === "stop") {
       clearAnalyzeTimer();
-      postToEngine(sf, "stop");
+      postToEngine(engine, "stop");
       latestId = null;
       return;
     }
@@ -223,14 +189,14 @@ const handleWorkerMessage = async (message: WorkerMessage) => {
       const staleId = latestId;
       latestId = null;
       sendError(`Engine analysis timed out on request ${staleId}.`);
-      postToEngine(sf, "stop");
+      postToEngine(engine, "stop");
     }, ANALYZE_TIMEOUT_MS);
 
-    postToEngine(sf, `position fen ${message.fen}`);
+    postToEngine(engine, `position fen ${message.fen}`);
     if (message.movetime && message.movetime > 0) {
-      postToEngine(sf, `go movetime ${message.movetime}`);
+      postToEngine(engine, `go movetime ${message.movetime}`);
     } else {
-      postToEngine(sf, `go depth ${message.depth ?? 12}`);
+      postToEngine(engine, `go depth ${message.depth ?? 12}`);
     }
   } catch (error) {
     clearAnalyzeTimer();
