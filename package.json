@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "stockfish:prepare": "node scripts/copy-stockfish-assets.mjs",
+    "postinstall": "npm run stockfish:prepare",
+    "predev": "npm run stockfish:prepare",
+    "prebuild": "npm run stockfish:prepare",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

@@ -1,5 +1,8 @@
-const STOCKFISH_CDN =
+const STOCKFISH_LOCAL_SCRIPT = "/stockfish/stockfish-nnue-16-single.js";
+const STOCKFISH_LOCAL_BASE = "/stockfish/";
+const STOCKFISH_CDN_SCRIPT =
   "https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/stockfish-nnue-16-single.js";
+const STOCKFISH_CDN_BASE = "https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/";
 
 type WorkerScopeWithStockfish = typeof globalThis & {
   importScripts: (...urls: string[]) => void;
@@ -15,7 +18,11 @@ const loadStockfish = () => {
   const workerScope = self as unknown as WorkerScopeWithStockfish;
 
   if (!workerScope.Stockfish) {
-    workerScope.importScripts(STOCKFISH_CDN);
+    try {
+      workerScope.importScripts(STOCKFISH_LOCAL_SCRIPT);
+    } catch {
+      workerScope.importScripts(STOCKFISH_CDN_SCRIPT);
+    }
   }
 
   if (!workerScope.Stockfish) {
@@ -58,7 +65,18 @@ let engine:
 const ensureEngine = () => {
   if (engine) return engine;
   const stockfish = loadStockfish();
-  const baseUrl = STOCKFISH_CDN.slice(0, STOCKFISH_CDN.lastIndexOf("/") + 1);
+  let baseUrl = STOCKFISH_LOCAL_BASE;
+  try {
+    const checkRequest = new XMLHttpRequest();
+    checkRequest.open("HEAD", `${STOCKFISH_LOCAL_BASE}stockfish-nnue-16-single.wasm`, false);
+    checkRequest.send(null);
+    if (checkRequest.status < 200 || checkRequest.status >= 400) {
+      baseUrl = STOCKFISH_CDN_BASE;
+    }
+  } catch {
+    baseUrl = STOCKFISH_CDN_BASE;
+  }
+
   engine = stockfish({
     locateFile: (path) =>
       path.endsWith(".wasm") ? `${baseUrl}${path}` : path

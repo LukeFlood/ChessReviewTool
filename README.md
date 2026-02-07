@@ -27,6 +27,8 @@ npm run dev
 
 Open `http://localhost:3000` and paste a PGN (a sample is available in `public/fixtures/sample-rapid.pgn`).
 
+Note: Stockfish engine assets are automatically copied to `public/stockfish` during install/dev/build.
+
 ## Configuration
 Create a `.env.local` file to enable real LLM commentary:
 ```
